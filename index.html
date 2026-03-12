@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="ru" x-data="{ 
+        darkMode: true, 
+        formatPrice(usd) { 
+            const loc = Alpine.store('locale'); 
+            const rate = Alpine.store('usdToRub') || 95; 
+            const n = Number(usd); 
+            if (loc === 'en') return (n % 1 !== 0 ? n.toFixed(2) : n) + ' $'; 
+            return Math.round(n * rate).toLocaleString('ru-RU') + ' ₽'; 
+        }, 
+        currencySymbol() { return Alpine.store('locale') === 'ru' ? '₽' : '$'; }, 
+        currencyCode() { return Alpine.store('locale') === 'ru' ? 'RUB' : 'USD'; } 
+    }" :class="{ 'dark': darkMode }">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ProxyBFY — Приватные прокси, дата-центры</title>
+    <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
+    <link rel="alternate icon" href="assets/logo.svg">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        document.addEventListener('alpine:init', () => {
+            Alpine.store('locale', 'ru');
+            Alpine.store('usdToRub', 95);
+            Alpine.store('pricesData', {});
+        });
+    </script>
+    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; transition: background-color 0.3s, color 0.3s; }
+        [x-cloak] { display: none !important; }
+        
+        /* Основной цвет проекта */
+        .text-primary { color: #0E546E; }
+        .bg-primary { background-color: #0E546E; }
+        .border-primary { border-color: #0E546E; }
+        .hover-primary:hover { background-color: #0c485e; }
+
+        /* Кастомные стили для скролла */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        .dark ::-webkit-scrollbar-track { background: #1f2937; }
+        ::-webkit-scrollbar-thumb { background: #0E546E; border-radius: 4px; }
+
+        /* Список стран с пунктиром до цены (как на референсе) */
+        .country-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; }
+        .country-row .flag { width: 24px; height: 18px; object-fit: cover; flex-shrink: 0; }
+        .country-row .name { flex-shrink: 0; }
+        .country-row .dots { flex: 1; min-width: 12px; border-bottom: 1px dotted currentColor; opacity: 0.4; margin: 0 4px; }
+        .country-row .price { flex-shrink: 0; font-size: 0.95em; }
+
+        /* Блок расчёта */
+        .calc-block { padding: 1rem 1.5rem; }
+    </style>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: '#0E546E',
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-slate-50 text-slate-900 dark:bg-[#0b0f1a] dark:text-gray-100">
+
+    <!-- Шапка сайта -->
+    <header class="sticky top-0 z-50 bg-white/80 dark:bg-[#0b0f1a]/80 backdrop-blur-md border-b border-gray-200 dark:border-gray-800">
+        <div class="container mx-auto px-4 h-20 flex items-center justify-between">
+            
+            <!-- Логотип -->
+            <a href="/" class="flex items-center gap-3">
+                <img src="assets/logo.svg" alt="ProxyBFY Logo" class="w-10 h-10" onerror="this.src='https://via.placeholder.com/40/0E546E/FFFFFF?text=P'">
+                <span class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">ProxyBFY</span>
+            </a>
+
+            <!-- Навигация -->
+            <nav class="hidden lg:flex items-center gap-6">
+                <!-- Меню "Прокси для" (задержка закрытия, чтобы успеть навести курсор) -->
+                <div class="relative group" x-data="{ open: false, closeTimer: null }" @mouseenter="clearTimeout(closeTimer); open = true" @mouseleave="closeTimer = setTimeout(() => open = false, 280)">
+                    <button class="flex items-center gap-1 font-medium hover:text-brand transition-colors py-4">
+                        Прокси для
+                        <svg class="w-4 h-4 transition-transform" :class="open && 'rotate-180'" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                    </button>
+                    <div x-show="open" x-cloak class="absolute top-full left-0 w-64 bg-white dark:bg-gray-900 shadow-xl border border-gray-100 dark:border-gray-800 rounded-md overflow-hidden py-2 translate-y-1">
+                        <a href="#" class="block px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Прокси для социальных сетей</a>
+                        <a href="#" class="block px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Прокси для программ</a>
+                        <a href="#" class="block px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Прокси для Веб-сайтов</a>
+                        <a href="#" class="block px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Прокси для других задач</a>
+                    </div>
+                </div>
+
+                <!-- Меню "Выбор страны" (задержка закрытия) -->
+                <div class="relative group" x-data="{ open: false, closeTimer: null }" @mouseenter="clearTimeout(closeTimer); open = true" @mouseleave="closeTimer = setTimeout(() => open = false, 280)">
+                    <button class="flex items-center gap-1 font-medium hover:text-brand transition-colors py-4">
+                        Выбор страны
+                        <svg class="w-4 h-4 transition-transform" :class="open && 'rotate-180'" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                    </button>
+                    <div x-show="open" x-cloak class="absolute top-full left-0 w-56 max-h-80 overflow-y-auto bg-white dark:bg-gray-900 shadow-xl border border-gray-100 dark:border-gray-800 rounded-md overflow-hidden py-2 translate-y-1">
+                        <div class="px-2 py-1 space-y-1">
+                            <template x-for="c in [['ru','Россия'],['us','США'],['de','Германия'],['fr','Франция'],['gb','Великобритания'],['gb-eng','Англия'],['ua','Украина'],['pl','Польша'],['it','Италия'],['es','Испания'],['nl','Нидерланды'],['cz','Чехия'],['ro','Румыния'],['bg','Болгария'],['pt','Португалия'],['se','Швеция'],['fi','Финляндия'],['ch','Швейцария'],['lv','Латвия'],['lt','Литва'],['am','Армения'],['ge','Грузия'],['tr','Турция'],['kz','Казахстан'],['cn','Китай'],['jp','Япония'],['kr','Южная Корея'],['in','Индия'],['id','Индонезия'],['th','Таиланд'],['sg','Сингапур'],['my','Малайзия'],['ae','ОАЭ'],['hk','Гонконг'],['bd','Бангладеш'],['au','Австралия'],['ca','Канада'],['mx','Мексика'],['br','Бразилия'],['za','ЮАР']]" :key="c[0]">
+                                <a href="#" class="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-md">
+                                    <img :src="'assets/flags/'+c[0]+'.svg'" class="w-5 h-4 object-cover rounded-sm" onerror="this.src='https://flagcdn.com/'+c[0]+'.svg'">
+                                    <span x-text="c[1]"></span>
+                                </a>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+
+                <a href="#" class="font-medium hover:text-brand">FAQ</a>
+                <a href="#" class="font-medium hover:text-brand">Контакт</a>
+            </nav>
+
+            <!-- Правая часть шапки -->
+            <div class="flex items-center gap-4">
+                <!-- Выбор языка (при переключении меняется валюта: RUB/₽ или USD/$) -->
+                <div class="relative hidden sm:block" x-data="{ open: false, closeTimer: null }" @mouseenter="clearTimeout(closeTimer); open = true" @mouseleave="closeTimer = setTimeout(() => open = false, 280)">
+                    <button class="flex items-center gap-2 px-3 py-2 rounded-md bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+                        <img :src="$store.locale === 'ru' ? 'assets/flags/ru.svg' : 'assets/flags/us.svg'" class="w-5 h-3.5" onerror="this.src='https://flagcdn.com/'+($store.locale==='ru'?'ru':'us')+'.svg'">
+                        <span class="text-sm font-medium uppercase" x-text="$store.locale === 'ru' ? 'Русский' : 'English'"></span>
+                        <svg class="w-4 h-4 transition-transform" :class="open && 'rotate-180'" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                    </button>
+                    <div x-show="open" x-cloak class="absolute top-full right-0 mt-1 w-44 bg-white dark:bg-gray-900 shadow-xl border border-gray-100 dark:border-gray-800 rounded-md overflow-hidden py-2 z-50">
+                        <a href="#" @click.prevent="$store.locale = 'ru'" class="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-md">
+                            <img src="assets/flags/ru.svg" class="w-5 h-4 object-cover rounded-sm" onerror="this.src='https://flagcdn.com/ru.svg'">
+                            <span>Русский</span>
+                        </a>
+                        <a href="#" @click.prevent="$store.locale = 'en'" class="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-md">
+                            <img src="assets/flags/us.svg" class="w-5 h-4 object-cover rounded-sm" onerror="this.src='https://flagcdn.com/us.svg'">
+                            <span>English</span>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Авторизация -->
+                <a href="#" class="px-6 py-2.5 rounded-md bg-brand text-white font-semibold hover-primary shadow-lg shadow-brand/20 transition-all">
+                    Вход
+                </a>
+
+                <!-- Переключатель темы -->
+                <button @click="darkMode = !darkMode" class="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors">
+                    <template x-if="!darkMode">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
+                    </template>
+                    <template x-if="darkMode">
+                        <svg class="w-6 h-6 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 9H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                    </template>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Hero Секция с калькулятором -->
+    <section class="relative pt-16 pb-24 overflow-hidden" x-data="{ 
+        service: '',
+        datacenterExpanded: false,
+        traffic: '—',
+        country: '', 
+        period: '', 
+        count: '',
+        serviceKey() {
+            const map = { 'IP-адрес': 'ip-адрес (3 бесплатные замены)', 'Приватный IP-адрес': 'Приватные ip-адреса (Безлимит)', 'Провайдерский прокси': 'Провайдерские', 'Резидентские прокси': 'Резидентские', 'Мобильные прокси': 'Мобильные' };
+            return map[this.service] || 'ip-адрес (3 бесплатные замены)';
+        },
+        trafficOptions() {
+            if (this.service === 'Приватный IP-адрес') return [{ v: 'Безлимит', label: 'Безлимит' }];
+            if (this.service === 'IP-адрес') return [{ v: '50 Гб', label: '50 Гб' }, { v: '100 ГБ', label: '100 ГБ' }, { v: '500 Гб', label: '500 Гб' }, { v: '1 Тб', label: '1 Тб' }, { v: 'Безлимит', label: 'Безлимит' }];
+            return [{ v: '—', label: 'Выбор Трафика' }];
+        },
+        countriesForSelect() {
+            if (this.service === 'Приватный IP-адрес') return [['us','США']];
+            if (this.service === 'IP-адрес') return [['au','Австралия'],['br','Бразилия'],['ca','Канада'],['cn','Китай'],['de','Германия'],['fr','Франция'],['gb','Великобритания'],['hk','Гонконг'],['il','Израиль'],['in','Индия'],['it','Италия'],['jp','Япония'],['kr','Южная Корея'],['nl','Нидерланды'],['ro','Румыния'],['sg','Сингапур'],['tr','Турция'],['us','США']];
+            return [['','Выбор страны'], ...this.countries];
+        },
+        countryFlagCode() {
+            if (!this.country) return '';
+            const found = this.countriesForSelect().find(function(c){ return c[1] === this.country; }.bind(this));
+            return (found && found[0]) ? found[0] : 'us';
+        },
+        getBasePriceUsd() {
+            if (!this.service || !this.country) return 0;
+            const key = this.serviceKey();
+            if (key === 'ip-адрес (3 бесплатные замены)' || key === 'Приватные ip-адреса (Безлимит)') return 0.9;
+            const data = Alpine.store('pricesData');
+            if (!data || !data[key]) return 0.9;
+            if (key === 'Резидентские') return (data.Резидентские.packages && data.Резидентские.packages[0]) ? data.Резидентские.packages[0].price : 1.99;
+            const regions = data[key];
+            const name = this.country === 'Великобритания' ? 'Англия' : this.country;
+            for (const r in regions) {
+                if (Array.isArray(regions[r])) {
+                    const found = regions[r].find(function(item) { return item.name === name; });
+                    if (found) return found.price;
+                }
+            }
+            return 0.9;
+        },
+        getPeriodMult() {
+            if (!this.period) return 0;
+            const data = Alpine.store('pricesData');
+            const mults = data && data.periodMultipliers ? data.periodMultipliers : { '1 неделя': 1, '2 недели': 1.5, '1 месяц': 2, '2 месяца': 3.8889, '3 месяца': 5.7778, '6 месяцев': 11.6667, '12 месяцев': 22.8889 };
+            return mults[this.period] != null ? mults[this.period] : 2;
+        },
+        discount() {
+            const c = parseInt(this.count, 10) || 0;
+            if (c > 90) return 30;
+            if (c > 50) return 20;
+            if (c > 10) return 10;
+            return 0;
+        },
+        getPriceUsd() {
+            const base = this.getBasePriceUsd();
+            const mult = this.getPeriodMult();
+            const c = parseInt(this.count, 10) || 0;
+            if (!c || !base || !mult) return 0;
+            const total = base * mult * c;
+            const d = this.discount();
+            return d ? total * (1 - d / 100) : total;
+        },
+        getPriceRub() {
+            const rate = Alpine.store('usdToRub') || 95;
+            return Math.round(this.getPriceUsd() * rate);
+        },
+        displayTotal() {
+            const rate = Alpine.store('usdToRub') || 95;
+            const usd = this.getPriceUsd();
+            if (!usd) return Alpine.store('locale') === 'en' ? '0 $' : '0 ₽';
+            if (Alpine.store('locale') === 'en') return (usd % 1 !== 0 ? usd.toFixed(2) : usd) + ' $';
+            return Math.round(usd * rate).toLocaleString('ru-RU') + ' ₽';
+        },
+        displayPerIp() {
+            const c = parseInt(this.count, 10) || 0;
+            const rate = Alpine.store('usdToRub') || 95;
+            if (!c) return Alpine.store('locale') === 'ru' ? '0 ₽' : '0 $';
+            const usdPerIp = this.getPriceUsd() / c;
+            if (Alpine.store('locale') === 'en') return (usdPerIp % 1 !== 0 ? usdPerIp.toFixed(2) : usdPerIp) + ' $';
+            return Math.round(usdPerIp * rate).toLocaleString('ru-RU') + ' ₽';
+        },
+        currencyCode() { return Alpine.store('locale') === 'ru' ? 'RUB' : 'USD'; },
+        countries: [['ru','Россия'],['us','США'],['de','Германия'],['fr','Франция'],['gb','Великобритания'],['gb-eng','Англия'],['ua','Украина'],['pl','Польша'],['it','Италия'],['es','Испания'],['nl','Нидерланды'],['cz','Чехия'],['ro','Румыния'],['bg','Болгария'],['pt','Португалия'],['se','Швеция'],['fi','Финляндия'],['ch','Швейцария'],['lv','Латвия'],['lt','Литва'],['am','Армения'],['ge','Грузия'],['tr','Турция'],['kz','Казахстан'],['cn','Китай'],['jp','Япония'],['kr','Южная Корея'],['in','Индия'],['id','Индонезия'],['th','Таиланд'],['sg','Сингапур'],['my','Малайзия'],['ae','ОАЭ'],['hk','Гонконг'],['bd','Бангладеш'],['au','Австралия'],['ca','Канада'],['mx','Мексика'],['br','Бразилия'],['za','ЮАР']]
+    }">
+        <div class="container mx-auto px-4 relative z-10">
+            <div class="text-center max-w-4xl mx-auto mb-16">
+                <h1 class="text-4xl md:text-6xl font-extrabold mb-6 leading-tight">
+                    Прокси из <span class="text-brand">40+ стран</span> с выбором города и моментальной заменой
+                </h1>
+                <p class="text-xl text-slate-600 dark:text-gray-400">
+                    Максимальная анонимность и высокая скорость для любых задач: от соцсетей до парсинга данных.
+                </p>
+            </div>
+
+            <!-- Форма заказа / Калькулятор (стиль как на картинке: подписи внутри полей, один список с вложенным Дата-центры) -->
+            <div class="bg-white dark:bg-gray-900 p-6 md:p-10 rounded-xl shadow-2xl border border-gray-100 dark:border-gray-800 max-w-6xl mx-auto">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8 min-w-0">
+                    
+                    <!-- 1. Выберите услугу (кастомный выпадающий список, Дата-центры раскрывается внутри списка) -->
+                    <div class="relative min-w-0" x-data="{ serviceOpen: false }">
+                        <button type="button" @click="serviceOpen = !serviceOpen; if (!serviceOpen) datacenterExpanded = false"
+                                class="w-full min-w-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg py-3.5 px-4 text-left flex items-center gap-2 focus:ring-2 focus:ring-brand focus:border-transparent outline-none overflow-hidden"
+                                :class="service ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-gray-400'">
+                            <span class="min-w-0 truncate text-inherit" style="font-size: clamp(0.75rem, 2vw, 1rem);" x-text="service === 'IP-адрес' ? 'IP-адрес' : service === 'Приватный IP-адрес' ? 'Приватный IP-адрес' : service === 'Провайдерский прокси' ? 'Провайдерский прокси' : service === 'Резидентские прокси' ? 'Резидентские прокси' : service === 'Мобильные прокси' ? 'Мобильные прокси' : 'Выберите услугу'"></span>
+                            <svg class="w-4 h-4 shrink-0 transition-transform flex-shrink-0" :class="serviceOpen && 'rotate-180'" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                        </button>
+                        <div x-show="serviceOpen" x-cloak @click.outside="serviceOpen = false"
+                             class="absolute z-20 left-0 right-0 mt-1 py-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg max-h-72 overflow-y-auto">
+                            <div class="py-0">
+                                <button type="button" @click="datacenterExpanded = !datacenterExpanded" class="w-full flex items-center justify-between py-2.5 px-4 text-left text-slate-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700/50">
+                                    <span>Дата-центры</span>
+                                    <svg class="w-4 h-4 shrink-0 transition-transform" :class="datacenterExpanded && 'rotate-90'" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                                </button>
+                                <div x-show="datacenterExpanded" class="bg-gray-50 dark:bg-gray-900/50 border-t border-gray-100 dark:border-gray-700">
+                                    <button type="button" @click="service = 'IP-адрес'; traffic = '50 Гб'; if (!country) country = 'Австралия'; serviceOpen = false" class="w-full py-2 px-4 pl-6 text-left text-sm text-slate-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700/50" :class="service === 'IP-адрес' && 'font-medium text-brand'">IP-адрес</button>
+                                    <button type="button" @click="service = 'Приватный IP-адрес'; country = 'США'; traffic = 'Безлимит'; serviceOpen = false" class="w-full py-2 px-4 pl-6 text-left text-sm text-slate-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700/50" :class="service === 'Приватный IP-адрес' && 'font-medium text-brand'">Приватный IP-адрес</button>
+                                </div>
+                                <button type="button" @click="service = 'Провайдерский прокси'; traffic = '—'; serviceOpen = false" class="w-full py-2.5 px-4 text-left text-slate-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700/50" :class="service === 'Провайдерский прокси' && 'font-medium text-brand'">Провайдерский прокси</button>
+                                <button type="button" @click="service = 'Резидентские прокси'; traffic = '—'; serviceOpen = false" class="w-full py-2.5 px-4 text-left text-slate-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700/50" :class="service === 'Резидентские прокси' && 'font-medium text-brand'">Резидентские прокси</button>
+                                <button type="button" @click="service = 'Мобильные прокси'; traffic = '—'; serviceOpen = false" class="w-full py-2.5 px-4 text-left text-slate-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700/50" :class="service === 'Мобильные прокси' && 'font-medium text-brand'">Мобильные прокси</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 2. Выбор Трафика (справа от Выберите услугу, подпись внутри поля) -->
+                    <div class="relative min-w-0">
+                        <select x-model="traffic" class="form-field-select w-full min-w-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg py-3.5 px-4 pr-10 text-slate-900 dark:text-white focus:ring-2 focus:ring-brand focus:border-transparent outline-none cursor-pointer appearance-none bg-no-repeat bg-[length:16px] bg-[right_12px_center] disabled:opacity-60 disabled:cursor-not-allowed text-ellipsis truncate max-w-full"
+                                :disabled="service !== 'IP-адрес' && service !== 'Приватный IP-адрес'"
+                                style="font-size: clamp(0.75rem, 2vw, 1rem); background-image: url('data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 fill=%27none%27 viewBox=%270 0 24 24%27 stroke=%27%239ca3af%27%3E%3Cpath stroke-linecap=%27round%27 stroke-linejoin=%27round%27 stroke-width=%272%27 d=%27M19 9l-7 7-7-7%27/%3E%3C/svg%3E');">
+                            <template x-for="opt in trafficOptions()" :key="opt.v">
+                                <option :value="opt.v" x-text="opt.label"></option>
+                            </template>
+                        </select>
+                    </div>
+
+                    <!-- 3. Выбор страны с флагами (кастомный выпадающий список) -->
+                    <div class="relative min-w-0" x-data="{ countryOpen: false }">
+                        <button type="button" @click="countryOpen = !countryOpen"
+                                class="w-full min-w-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg py-3.5 px-4 text-left flex items-center justify-between text-slate-900 dark:text-white focus:ring-2 focus:ring-brand focus:border-transparent outline-none overflow-hidden"
+                                style="font-size: clamp(0.75rem, 2vw, 1rem);">
+                            <span class="flex items-center gap-2 min-w-0 truncate">
+                                <template x-if="country && countryFlagCode()">
+                                    <img :src="'assets/flags/' + countryFlagCode() + '.svg'" :data-code="countryFlagCode()" alt="" class="w-5 h-4 rounded object-cover shrink-0" onerror="var c=this.getAttribute('data-code')||'us';this.src='https://flagcdn.com/'+c+'.svg'">
+                                </template>
+                                <span class="truncate" x-text="country || 'Выбор страны'"></span>
+                            </span>
+                            <svg class="w-4 h-4 shrink-0 transition-transform ml-2" :class="countryOpen && 'rotate-180'" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                        </button>
+                        <div x-show="countryOpen" x-cloak @click.outside="countryOpen = false"
+                             class="absolute z-20 left-0 right-0 mt-1 py-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg max-h-72 overflow-y-auto">
+                            <template x-for="c in countriesForSelect().filter(function(x){ return x[0] !== ''; })" :key="c[0]">
+                                <button type="button"
+                                        @click="country = c[1]; countryOpen = false"
+                                        class="w-full flex items-center gap-2 px-4 py-2.5 text-left text-slate-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700/50">
+                                    <img :src="'assets/flags/' + c[0] + '.svg'" :data-code="c[0]" alt="" class="w-5 h-4 rounded object-cover shrink-0" onerror="var x=this.getAttribute('data-code');if(x)this.src='https://flagcdn.com/'+x+'.svg'">
+                                    <span class="truncate" x-text="c[1]"></span>
+                                </button>
+                            </template>
+                        </div>
+                    </div>
+
+                    <!-- 4. Период (подпись внутри) -->
+                    <div class="relative min-w-0">
+                        <select x-model="period" class="form-field-select w-full min-w-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg py-3.5 px-4 pr-10 text-slate-900 dark:text-white focus:ring-2 focus:ring-brand focus:border-transparent outline-none cursor-pointer appearance-none bg-no-repeat bg-[length:16px] bg-[right_12px_center] text-ellipsis truncate max-w-full"
+                                style="font-size: clamp(0.75rem, 2vw, 1rem); background-image: url('data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 fill=%27none%27 viewBox=%270 0 24 24%27 stroke=%27%239ca3af%27%3E%3Cpath stroke-linecap=%27round%27 stroke-linejoin=%27round%27 stroke-width=%272%27 d=%27M19 9l-7 7-7-7%27/%3E%3C/svg%3E');">
+                            <option value="">Выберите период</option>
+                            <option>1 неделя</option>
+                            <option>2 недели</option>
+                            <option>1 месяц</option>
+                            <option>2 месяца</option>
+                            <option>3 месяца</option>
+                            <option>6 месяцев</option>
+                            <option>12 месяцев</option>
+                        </select>
+                    </div>
+
+                    <!-- 5. Количество IP (подпись внутри как placeholder) -->
+                    <div class="relative min-w-0">
+                        <input type="text" 
+                               x-model="count" 
+                               @input="count = count.replace(/[^0-9]/g, ''); var n = parseInt(count, 10); if (n > 100) count = '100';"
+                               placeholder="Введите количество IP"
+                               maxlength="3"
+                               class="w-full min-w-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg py-3.5 px-4 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-brand focus:border-transparent outline-none text-ellipsis max-w-full"
+                               style="font-size: clamp(0.75rem, 2vw, 1rem);">
+                    </div>
+                </div>
+
+                <!-- Блок расчета: по центру, без зелёного и пунктирных рамок -->
+                <div class="flex flex-col md:flex-row items-center justify-center border-t border-gray-100 dark:border-gray-800 pt-8 gap-6">
+                    <div class="calc-block flex flex-col justify-center items-center md:items-start text-center md:text-left">
+                        <div class="text-2xl md:text-3xl font-bold text-slate-800 dark:text-gray-200" x-text="displayTotal()">
+                        </div>
+                        <div class="text-sm md:text-base text-slate-500 dark:text-gray-400 mt-1" x-text="displayPerIp() + ' / IP'">
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-center gap-4 flex-shrink-0">
+                        <span class="text-sm font-medium px-3 py-1 bg-brand/10 text-brand dark:text-brand rounded-full" x-show="discount() > 0" x-text="'Скидка -' + discount() + '%'"></span>
+                        <button class="w-full md:w-auto px-8 py-4 bg-brand hover-primary text-white text-lg font-bold rounded-xl shadow-lg shadow-brand/30 transition-all transform hover:scale-[1.02] active:scale-95">
+                            Купить прокси
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Декоративные элементы фона -->
+        <div class="absolute top-[-10%] right-[-5%] w-[40rem] h-[40rem] bg-brand/5 blur-[120px] rounded-full pointer-events-none"></div>
+        <div class="absolute bottom-[-10%] left-[-5%] w-[30rem] h-[30rem] bg-brand/10 blur-[100px] rounded-full pointer-events-none"></div>
+    </section>
+
+    <!-- Секция Тарифы (Main Tabs) — список стран по регионам как на референсе -->
+    <section class="py-24 bg-white dark:bg-[#0d121f] text-slate-800 dark:text-gray-200" x-data="{ 
+        activeTab: 'Дата-центры', 
+        subType: 'ip-адрес (3 бесплатные замены)', 
+        activeVolume: null,
+    }">
+        <div class="container mx-auto px-4">
+            <h2 class="text-3xl font-bold text-center mb-12">Популярные направления</h2>
+            
+            <div class="main-tabs-with-prices max-w-6xl mx-auto">
+                <!-- Табы (наверху) -->
+                <div class="flex flex-wrap justify-center gap-2 mb-6">
+                    <template x-for="tab in ['Дата-центры', 'Провайдерские', 'Резидентские', 'Мобильные']">
+                        <button @click="activeTab = tab"
+                                :class="activeTab === tab ? 'bg-brand text-white' : 'bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700'"
+                                class="px-6 py-3 rounded-lg font-semibold transition-all shadow-sm"
+                                x-text="tab">
+                        </button>
+                    </template>
+                </div>
+
+                <!-- Две кнопки под табами (только для Дата-центры) -->
+                <div class="flex flex-wrap justify-center gap-2 mb-4" x-show="activeTab === 'Дата-центры'">
+                    <button @click="subType = 'ip-адрес (3 бесплатные замены)'"
+                            :class="subType === 'ip-адрес (3 бесплатные замены)' ? 'bg-brand text-white' : 'bg-gray-100 dark:bg-gray-800'"
+                            class="px-5 py-2.5 rounded-lg font-medium transition-all shadow-sm">ip-адрес (3 бесплатные замены)</button>
+                    <button @click="subType = 'Приватные ip-адреса (Безлимит)'"
+                            :class="subType === 'Приватные ip-адреса (Безлимит)' ? 'bg-brand text-white' : 'bg-gray-100 dark:bg-gray-800'"
+                            class="px-5 py-2.5 rounded-lg font-medium transition-all shadow-sm">Приватные ip-адреса (Безлимит)</button>
+                </div>
+                <!-- 5 кнопок объёма (только при "ip-адрес (3 бесплатные замены)") -->
+                <div class="flex flex-wrap justify-center gap-2 mb-10" x-show="activeTab === 'Дата-центры' && subType === 'ip-адрес (3 бесплатные замены)'" x-cloak style="display: none;">
+                    <template x-for="vol in ['50 Гб', '100 ГБ', '500 Гб', '1 Тб', 'Безлимит']">
+                        <button @click="activeVolume = activeVolume === vol ? null : vol"
+                                :class="activeVolume === vol ? 'bg-brand text-white' : 'bg-gray-100 dark:bg-gray-800'"
+                                class="px-4 py-2 rounded-lg font-medium transition-all shadow-sm" x-text="vol"></button>
+                    </template>
+                </div>
+
+                <!-- Контент Дата-центры: все страны по 0,9$ или только США при "Приватные ip-адреса (Безлимит)" -->
+                <div class="space-y-12" x-show="activeTab === 'Дата-центры' && subType === 'Приватные ip-адреса (Безлимит)'" x-cloak style="display: none;">
+                    <div>
+                        <div class="space-y-0">
+                            <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/us.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/us.svg'"><span class="name">США</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(0.9) + ' / IP'"></span></a>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Контент для вкладки Провайдерские (как на картинке) -->
+                <div class="space-y-12" x-show="activeTab === 'Провайдерские'" x-cloak style="display: none;">
+                    <div>
+                        <h3 class="text-xl font-bold text-slate-800 dark:text-gray-100 mb-4">Европа</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-0">
+                            <div class="space-y-0">
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/pl.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/pl.svg'"><span class="name">Польша</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(1.50) + ' / IP'"></span></a>
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/fr.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/fr.svg'"><span class="name">Франция</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(1.50) + ' / IP'"></span></a>
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/gb.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/gb.svg'"><span class="name">Англия</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(1.50) + ' / IP'"></span></a>
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/de.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/de.svg'"><span class="name">Германия</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(1.50) + ' / IP'"></span></a>
+                            </div>
+                            <div class="space-y-0">
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/nl.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/nl.svg'"><span class="name">Нидерланды</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(1.50) + ' / IP'"></span></a>
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/ro.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/ro.svg'"><span class="name">Румыния</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(1.50) + ' / IP'"></span></a>
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/ua.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/ua.svg'"><span class="name">Украина</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(1.50) + ' / IP'"></span></a>
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/it.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/it.svg'"><span class="name">Италия</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(1.50) + ' / IP'"></span></a>
+                            </div>
+                            <div class="space-y-0">
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/lv.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/lv.svg'"><span class="name">Латвия</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(1.50) + ' / IP'"></span></a>
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/at.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/at.svg'"><span class="name">Австрия</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(1.50) + ' / IP'"></span></a>
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/es.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/es.svg'"><span class="name">Испания</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(1.50) + ' / IP'"></span></a>
+                            </div>
+                        </div>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-bold text-slate-800 dark:text-gray-100 mb-4">Азия</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-0">
+                            <div class="space-y-0">
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/tr.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/tr.svg'"><span class="name">Турция</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(1.75) + ' / IP'"></span></a>
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/tw.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/tw.svg'"><span class="name">Тайвань</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(1.75) + ' / IP'"></span></a>
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/hk.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/hk.svg'"><span class="name">Гонконг</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(1.75) + ' / IP'"></span></a>
+                            </div>
+                            <div class="space-y-0">
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/jp.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/jp.svg'"><span class="name">Япония</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(1.75) + ' / IP'"></span></a>
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/kr.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/kr.svg'"><span class="name">Южная Корея</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(1.75) + ' / IP'"></span></a>
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/th.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/th.svg'"><span class="name">Таиланд</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(1.75) + ' / IP'"></span></a>
+                            </div>
+                            <div class="space-y-0">
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/il.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/il.svg'"><span class="name">Израиль</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(1.75) + ' / IP'"></span></a>
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/sg.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/sg.svg'"><span class="name">Сингапур</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(1.75) + ' / IP'"></span></a>
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/in.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/in.svg'"><span class="name">Индия</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(1.75) + ' / IP'"></span></a>
+                            </div>
+                        </div>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-bold text-slate-800 dark:text-gray-100 mb-4">Северная Америка</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-0">
+                            <div class="space-y-0">
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/us.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/us.svg'"><span class="name">США</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(1.50) + ' / IP'"></span></a>
+                            </div>
+                            <div class="space-y-0">
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/ca.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/ca.svg'"><span class="name">Канада</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(1.50) + ' / IP'"></span></a>
+                            </div>
+                        </div>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-bold text-slate-800 dark:text-gray-100 mb-4">Южная Америка</h3>
+                        <div class="space-y-0">
+                            <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/br.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/br.svg'"><span class="name">Бразилия</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(1.50) + ' / IP'"></span></a>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Контент для вкладки Резидентские (объём трафика и цены, как на картинке) -->
+                <div class="space-y-12" x-show="activeTab === 'Резидентские'" x-cloak style="display: none;">
+                    <div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-0">
+                            <div class="space-y-0">
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><span class="name">500 Mb</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(1.99)"></span></a>
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><span class="name">1 Gb</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(3.50)"></span></a>
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><span class="name">10 Gb</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(25)"></span></a>
+                            </div>
+                            <div class="space-y-0">
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><span class="name">100 Gb</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(220)"></span></a>
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><span class="name">25 Gb</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(60)"></span></a>
+                            </div>
+                            <div class="space-y-0">
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><span class="name">50 Gb</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(115)"></span></a>
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><span class="name">3 Gb</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(9)"></span></a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Контент для вкладки Мобильные (страны и цены как на картинке) -->
+                <div class="space-y-12" x-show="activeTab === 'Мобильные'" x-cloak style="display: none;">
+                    <div>
+                        <h3 class="text-xl font-bold text-slate-800 dark:text-gray-100 mb-4">Европа</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-0">
+                            <div class="space-y-0">
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/gb.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/gb.svg'"><span class="name">Англия</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(55) + ' / IP'"></span></a>
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/fr.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/fr.svg'"><span class="name">Франция</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(40) + ' / IP'"></span></a>
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/it.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/it.svg'"><span class="name">Италия</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(40) + ' / IP'"></span></a>
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/cz.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/cz.svg'"><span class="name">Чехия</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(25) + ' / IP'"></span></a>
+                            </div>
+                            <div class="space-y-0">
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/nl.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/nl.svg'"><span class="name">Нидерланды</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(55) + ' / IP'"></span></a>
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/pl.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/pl.svg'"><span class="name">Польша</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(25) + ' / IP'"></span></a>
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/ro.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/ro.svg'"><span class="name">Румыния</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(33) + ' / IP'"></span></a>
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/de.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/de.svg'"><span class="name">Германия</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(53) + ' / IP'"></span></a>
+                            </div>
+                            <div class="space-y-0">
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/lt.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/lt.svg'"><span class="name">Литва</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(33) + ' / IP'"></span></a>
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/es.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/es.svg'"><span class="name">Испания</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(50) + ' / IP'"></span></a>
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/lv.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/lv.svg'"><span class="name">Латвия</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(40) + ' / IP'"></span></a>
+                            </div>
+                        </div>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-bold text-slate-800 dark:text-gray-100 mb-4">Азия</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-0">
+                            <div class="space-y-0">
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/in.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/in.svg'"><span class="name">Индия</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(36) + ' / IP'"></span></a>
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/th.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/th.svg'"><span class="name">Таиланд</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(33) + ' / IP'"></span></a>
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/bd.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/bd.svg'"><span class="name">Бангладеш</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(33) + ' / IP'"></span></a>
+                            </div>
+                            <div class="space-y-0">
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/tr.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/tr.svg'"><span class="name">Турция</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(80) + ' / IP'"></span></a>
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/jp.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/jp.svg'"><span class="name">Япония</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(80) + ' / IP'"></span></a>
+                            </div>
+                        </div>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-bold text-slate-800 dark:text-gray-100 mb-4">Северная Америка</h3>
+                        <div class="space-y-0">
+                            <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/us.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/us.svg'"><span class="name">США</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(33) + ' / IP'"></span></a>
+                        </div>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-bold text-slate-800 dark:text-gray-100 mb-4">Южная Америка</h3>
+                        <div class="space-y-0">
+                            <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/br.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/br.svg'"><span class="name">Бразилия</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(55) + ' / IP'"></span></a>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Контент Дата-центры: страны по континентам, Европа и Азия — два симметричных блока -->
+                <div class="space-y-12" x-show="activeTab === 'Дата-центры' && subType === 'ip-адрес (3 бесплатные замены)'">
+                    <div>
+                        <h3 class="text-xl font-bold text-slate-800 dark:text-gray-100 mb-5">Европа</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-10 max-w-4xl mx-auto">
+                            <div class="flex flex-col gap-3 min-w-0">
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/de.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/de.svg'"><span class="name">Германия</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(0.9) + ' / IP'"></span></a>
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/fr.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/fr.svg'"><span class="name">Франция</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(0.9) + ' / IP'"></span></a>
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/gb.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/gb.svg'"><span class="name">Великобритания</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(0.9) + ' / IP'"></span></a>
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/it.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/it.svg'"><span class="name">Италия</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(0.9) + ' / IP'"></span></a>
+                            </div>
+                            <div class="flex flex-col gap-3 min-w-0">
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/nl.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/nl.svg'"><span class="name">Нидерланды</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(0.9) + ' / IP'"></span></a>
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/ro.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/ro.svg'"><span class="name">Румыния</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(0.9) + ' / IP'"></span></a>
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/tr.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/tr.svg'"><span class="name">Турция</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(0.9) + ' / IP'"></span></a>
+                            </div>
+                        </div>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-bold text-slate-800 dark:text-gray-100 mb-5">Азия</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-10 max-w-4xl mx-auto">
+                            <div class="flex flex-col gap-3 min-w-0">
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/cn.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/cn.svg'"><span class="name">Китай</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(0.9) + ' / IP'"></span></a>
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/hk.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/hk.svg'"><span class="name">Гонконг</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(0.9) + ' / IP'"></span></a>
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/il.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/il.svg'"><span class="name">Израиль</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(0.9) + ' / IP'"></span></a>
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/in.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/in.svg'"><span class="name">Индия</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(0.9) + ' / IP'"></span></a>
+                            </div>
+                            <div class="flex flex-col gap-3 min-w-0">
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/jp.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/jp.svg'"><span class="name">Япония</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(0.9) + ' / IP'"></span></a>
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/kr.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/kr.svg'"><span class="name">Южная Корея</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(0.9) + ' / IP'"></span></a>
+                                <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/sg.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/sg.svg'"><span class="name">Сингапур</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(0.9) + ' / IP'"></span></a>
+                            </div>
+                        </div>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-bold text-slate-800 dark:text-gray-100 mb-4">Северная Америка</h3>
+                        <div class="space-y-0">
+                            <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/us.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/us.svg'"><span class="name">США</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(0.9) + ' / IP'"></span></a>
+                            <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/ca.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/ca.svg'"><span class="name">Канада</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(0.9) + ' / IP'"></span></a>
+                        </div>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-bold text-slate-800 dark:text-gray-100 mb-4">Южная Америка</h3>
+                        <div class="space-y-0">
+                            <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/br.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/br.svg'"><span class="name">Бразилия</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(0.9) + ' / IP'"></span></a>
+                        </div>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-bold text-slate-800 dark:text-gray-100 mb-4">Австралия и Океания</h3>
+                        <div class="space-y-0">
+                            <a href="#" class="country-row text-slate-700 dark:text-gray-300 hover:text-brand dark:hover:text-brand"><img src="assets/flags/au.svg" alt="" class="flag" onerror="this.src='https://flagcdn.com/au.svg'"><span class="name">Австралия</span><span class="dots"></span><span class="price" x-text="'от ' + formatPrice(0.9) + ' / IP'"></span></a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Секция Информации -->
+    <section class="py-24">
+        <div class="container mx-auto px-4 max-w-5xl">
+            <div class="space-y-16">
+                
+                <div class="flex flex-col md:flex-row gap-12 items-center">
+                    <div class="flex-1">
+                        <h2 class="text-3xl font-bold mb-6">Как используются Прокси-Серверы</h2>
+                        <p class="text-lg leading-relaxed opacity-80">
+                            Прокси-серверы ProxyBFY — это мощный инструмент для обеспечения приватности и обхода сетевых ограничений. Наши клиенты используют их для SMM-продвижения, тестирования локализации приложений, безопасного веб-скрейпинга и доступа к ресурсам, ограниченным по региональному признаку.
+                        </p>
+                    </div>
+                    <div class="w-full md:w-1/3 p-10 bg-brand/5 rounded-lg">
+                        <div class="aspect-square flex items-center justify-center">
+                            <svg class="w-32 h-32 text-brand animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-brand text-white rounded-lg p-10 md:p-16 shadow-2xl relative overflow-hidden">
+                    <h2 class="text-3xl font-bold mb-6 relative z-10">ProxyBFY — ваш надежный поставщик прокси</h2>
+                    <p class="text-xl opacity-90 relative z-10 max-w-3xl">
+                        Мы работаем на рынке более 5 лет, обеспечивая 99.9% аптайм и круглосуточную поддержку. Наша сеть включает более 1 000 000 чистых IP-адресов, которые не числятся в блэклистах и обеспечивают максимальную скорость соединения.
+                    </p>
+                    <div class="absolute right-[-5%] bottom-[-20%] text-white/10 select-none">
+                        <svg class="w-96 h-96" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z"/></svg>
+                    </div>
+                </div>
+
+                <div class="text-center">
+                    <h2 class="text-3xl font-bold mb-6 italic">IP-адреса с безупречной репутацией</h2>
+                    <p class="text-lg opacity-80 max-w-3xl mx-auto">
+                        Мы строго соблюдаем этические нормы получения IP-адресов. Наши резидентские и провайдерские прокси получены через официальные партнерства, что гарантирует их легитимность и отсутствие проблем с безопасностью для наших клиентов.
+                    </p>
+                </div>
+
+            </div>
+        </div>
+    </section>
+
+    <!-- Футер -->
+    <footer class="bg-gray-100 dark:bg-[#080b14] pt-16 pb-8 border-t border-gray-200 dark:border-gray-800">
+        <div class="container mx-auto px-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12 mb-16">
+                <!-- О нас -->
+                <div>
+                    <div class="flex items-center gap-3 mb-6">
+                        <img src="assets/logo.svg" alt="ProxyBFY Logo" class="w-8 h-8">
+                        <span class="text-xl font-bold text-slate-900 dark:text-white">ProxyBFY</span>
+                    </div>
+                    <p class="opacity-60 text-sm mb-6">
+                        Профессиональные решения для анонимности в сети. Мы предоставляем только качественные и быстрые прокси-серверы для любых бизнес-задач.
+                    </p>
+                    <div class="flex gap-4">
+                        <a href="#" class="w-10 h-10 rounded-full bg-brand/10 flex items-center justify-center hover:bg-brand hover:text-white transition-colors">
+                            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M24 4.557c-.883.392-1.832.656-2.828.775 1.017-.609 1.798-1.574 2.165-2.724-.951.564-2.005.974-3.127 1.195-.897-.957-2.178-1.555-3.594-1.555-3.179 0-5.515 2.966-4.797 6.045-4.091-.205-7.719-2.165-10.148-5.144-1.29 2.213-.669 5.108 1.523 6.574-.806-.026-1.566-.247-2.229-.616-.054 2.281 1.581 4.415 3.949 4.89-.693.188-1.452.232-2.224.084.626 1.956 2.444 3.379 4.6 3.419-2.07 1.623-4.678 2.348-7.29 2.04 2.179 1.397 4.768 2.212 7.548 2.212 9.142 0 14.307-7.721 13.995-14.646.962-.695 1.797-1.562 2.457-2.549z"/></svg>
+                        </a>
+                        <a href="#" class="w-10 h-10 rounded-full bg-brand/10 flex items-center justify-center hover:bg-brand hover:text-white transition-colors">
+                            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221l-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.446 1.394c-.14.14-.29.29-.44.29l.18-2.57 4.68-4.22c.2-.18-.04-.28-.3-.11l-5.78 3.64-2.49-.78c-.54-.17-.55-.54.11-.8l9.74-3.76c.45-.17.84.1.7.83z"/></svg>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Быстрые ссылки -->
+                <div>
+                    <h4 class="font-bold mb-6">Услуги</h4>
+                    <ul class="space-y-4 text-sm opacity-60">
+                        <li><a href="#" class="hover:text-brand transition-colors">Дата-центры</a></li>
+                        <li><a href="#" class="hover:text-brand transition-colors">Приватные прокси</a></li>
+                        <li><a href="#" class="hover:text-brand transition-colors">Мобильные прокси</a></li>
+                        <li><a href="#" class="hover:text-brand transition-colors">Резидентские прокси</a></li>
+                        <li><a href="#" class="hover:text-brand transition-colors">Общие прокси</a></li>
+                    </ul>
+                </div>
+
+                <!-- Поддержка -->
+                <div>
+                    <h4 class="font-bold mb-6">Информация</h4>
+                    <ul class="space-y-4 text-sm opacity-60">
+                        <li><a href="#" class="hover:text-brand transition-colors">База знаний</a></li>
+                        <li><a href="#" class="hover:text-brand transition-colors">Партнерская программа</a></li>
+                        <li><a href="#" class="hover:text-brand transition-colors">Публичная оферта</a></li>
+                        <li><a href="#" class="hover:text-brand transition-colors">Политика конфиденциальности</a></li>
+                    </ul>
+                </div>
+
+                <!-- Контакты -->
+                <div>
+                    <h4 class="font-bold mb-6">Поддержка</h4>
+                    <div class="space-y-4">
+                        <a href="mailto:support@proxybfy.com" class="block text-brand font-semibold text-lg hover:underline">support@proxybfy.com</a>
+                        <p class="text-sm opacity-60">Круглосуточная поддержка 24/7 без выходных.</p>
+                        <div class="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                            <p class="text-xs font-bold uppercase opacity-40 mb-2">Онлайн чат</p>
+                            <p class="text-sm">Среднее время ответа: <span class="text-green-500 font-bold">2 минуты</span></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="pt-8 border-t border-gray-200 dark:border-gray-800 flex flex-col md:flex-row justify-between items-center gap-4 text-xs opacity-40">
+                <p>© 2026 ProxyBFY. Все права защищены.</p>
+                <div class="flex gap-6">
+                    <span>SOCKS5 & HTTP/S Support</span>
+                    <span>100% Anonymity Guaranteed</span>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Загрузка курса валют и цен из JSON -->
+    <script>
+        (function() {
+            function setRate(rub) {
+                if (rub && typeof Alpine !== 'undefined' && Alpine.store) Alpine.store('usdToRub', rub);
+            }
+            fetch('https://open.er-api.com/v6/latest/USD').then(function(r) { return r.json(); }).then(function(data) {
+                var rub = data.rates && data.rates.RUB ? data.rates.RUB : 95;
+                setRate(Number(rub));
+            }).catch(function() { setRate(95); });
+            fetch('value/price/prices.json').then(function(r) { return r.json(); }).then(function(data) {
+                if (typeof Alpine !== 'undefined' && Alpine.store) Alpine.store('pricesData', data);
+            }).catch(function() {});
+        })();
+    </script>
+</body>
+</html>
